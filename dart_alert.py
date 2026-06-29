@@ -76,8 +76,15 @@ def get_dcm_no(rcept_no):
     url = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}"
     resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
     if rcept_no == DEBUG_RCEPT:
+        import re as _re
         print(f"[HTML] 전체길이={len(resp.text)}")
-        print(f"[HTML] 1000~3000: {resp.text[1000:3000]}")
+        print(f"[HTML] 15000~20000: {resp.text[15000:20000]}")
+        # viewer.do 패턴 검색
+        viewers = _re.findall(r"viewer\.do[^\"']{0,100}", resp.text)
+        print(f"[HTML] viewer.do 패턴: {viewers[:3]}")
+        # 8자리 숫자 검색 (dcmNo 후보)
+        nums = _re.findall(r"\b\d{8}\b", resp.text)
+        print(f"[HTML] 8자리숫자: {list(set(nums))[:10]}")
     m = re.search(r"dcmNo['\"\s:=]+(\d+)", resp.text)
     return m.group(1) if m else None
 
