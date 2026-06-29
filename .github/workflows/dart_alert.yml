@@ -22,10 +22,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: seen.json
-          key: dart-seen-v2-${{ steps.date.outputs.date }}-${{ github.run_number }}
+          key: dart-seen-v3-${{ steps.date.outputs.date }}-${{ github.run_number }}
           restore-keys: |
-            dart-seen-v2-${{ steps.date.outputs.date }}-
-            dart-seen-v2-
+            dart-seen-v3-${{ steps.date.outputs.date }}-
+            dart-seen-v3-
 
       - uses: actions/setup-python@v5
         with:

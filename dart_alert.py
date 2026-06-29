@@ -1,7 +1,6 @@
-import io
 import json
 import os
-import zipfile
+import re
 from datetime import date
 
 import requests
@@ -10,6 +9,7 @@ DART_KEY = os.environ["DART_API_KEY"]
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 SEEN_FILE = "seen.json"
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 
 def load_seen():
@@ -24,7 +24,8 @@ def save_seen(seen):
         json.dump(sorted(seen), f)
 
 
-def fetch_disclosures(today):
+def fetch_all_d002(today):
+    """DART API로 오늘 D002 공시 목록 조회 (회사명 등 메타 포함)"""
     resp = requests.get(
         "https://opendart.fss.or.kr/api/list.json",
         params={
@@ -37,115 +38,59 @@ def fetch_disclosures(today):
         timeout=10,
     )
     data = resp.json()
-    print(f"[DART API] status={data.get('status')}, total={data.get('total_count', 0)}")
     items = data.get("list", []) if data.get("status") == "000" else []
-    filtered = [i for i in items if "소유상황" in i.get("report_nm", "")]
-    print(f"[DART] 소유상황 공시 {len(filtered)}건: {[i.get('corp_name') for i in filtered]}")
-    return filtered
+    return {i["rcept_no"]: i for i in items if "소유상황" in i.get("report_nm", "")}
 
 
-def read_zip_text(content_bytes, debug=False):
-    texts = []
-    try:
-        zf = zipfile.ZipFile(io.BytesIO(content_bytes))
-        if debug:
-            print(f"[ZIP] 파일목록: {zf.namelist()}")
-        for fname in zf.namelist():
-            raw = zf.read(fname)
-            for enc in ("utf-8", "euc-kr", "cp949"):
-                try:
-                    text = raw.decode(enc)
-                    if debug:
-                        print(f"[ZIP] {fname} ({enc}) 앞200자: {text[:200]}")
-                    texts.append(text)
-                    break
-                except Exception:
-                    continue
-    except Exception as e:
-        if debug:
-            print(f"[ZIP] zip 오류: {e}")
-    return "\n".join(texts)
-
-
-DEBUG_RCEPT = "20260629000133"  # 삼성중공업
-
-
-def get_dcm_no(rcept_no):
-    """DART 뷰어 페이지에서 dcmNo 추출"""
-    import re
-    url = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}"
-    resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-    if rcept_no == DEBUG_RCEPT:
-        import re as _re
-        print(f"[HTML] 전체길이={len(resp.text)}")
-        print(f"[HTML] 15000~20000: {resp.text[15000:20000]}")
-        # viewer.do 패턴 검색
-        viewers = _re.findall(r"viewer\.do[^\"']{0,100}", resp.text)
-        print(f"[HTML] viewer.do 패턴: {viewers[:3]}")
-        # 8자리 숫자 검색 (dcmNo 후보)
-        nums = _re.findall(r"\b\d{8}\b", resp.text)
-        print(f"[HTML] 8자리숫자: {list(set(nums))[:10]}")
-    m = re.search(r"dcmNo['\"\s:=]+(\d+)", resp.text)
-    return m.group(1) if m else None
-
-
-def is_jangnaemaesu(rcept_no):
-    debug = (rcept_no == DEBUG_RCEPT)
-    try:
-        dcm_no = get_dcm_no(rcept_no)
-        if debug:
-            print(f"[DOC] dcmNo={dcm_no}")
-        if not dcm_no:
-            return False
-
-        url = (f"https://dart.fss.or.kr/report/viewer.do"
-               f"?rcpNo={rcept_no}&dcmNo={dcm_no}&eleId=0&offset=0&length=0&dtd=")
-        resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-        if debug:
-            print(f"[DOC] viewer HTTP={resp.status_code} size={len(resp.content)}")
-            print(f"[DOC] 앞500자: {resp.text[:500]}")
-
-        found = "장내매수" in resp.text
-        if debug or found:
-            print(f"[DOC] {rcept_no} 장내매수={found}")
-        return found
-    except Exception as e:
-        print(f"[DOC] {rcept_no} 오류: {e}")
-        return False
+def fetch_jangnaemaesu_rcepts(today):
+    """DART 통합검색으로 '장내매수' 텍스트가 포함된 D002 공시의 rcpNo 목록 반환"""
+    resp = requests.post(
+        "https://dart.fss.or.kr/dsab001/search.ax",
+        headers={**HEADERS, "X-Requested-With": "XMLHttpRequest"},
+        data={
+            "selectKey": "text",
+            "textCrpNm": "",
+            "startDate": today,
+            "endDate": today,
+            "publicType": "D002",
+            "keyWord": "장내매수",
+            "currentPage": "1",
+            "maxResults": "100",
+        },
+        timeout=20,
+    )
+    text = resp.content.decode("utf-8", errors="replace")
+    return set(re.findall(r"rcpNo[='](\d{14})", text))
 
 
 def send_telegram(msg):
-    resp = requests.post(
+    requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"},
         timeout=10,
     )
-    print(f"[TG] status={resp.status_code} body={resp.text[:200]}")
 
 
 def main():
-    # 삼성중공업 공시 고정 디버그
-    print("[FIXED DEBUG] 삼성중공업 20260629000133 직접 검사")
-    is_jangnaemaesu("20260629000133")
-
     today = date.today().strftime("%Y%m%d")
-    items = fetch_disclosures(today)
+
+    all_d002 = fetch_all_d002(today)
+    buy_rcepts = fetch_jangnaemaesu_rcepts(today)
 
     seen = load_seen()
-    new_items = [i for i in items if i["rcept_no"] not in seen]
-    print(f"[SEEN] 신규 공시 {len(new_items)}건")
+    # 오늘 D002 전체를 seen에 기록 (매도 포함 중복 방지)
+    seen.update(all_d002.keys())
 
-    for item in new_items:
-        rcept_no = item["rcept_no"]
-        seen.add(rcept_no)
+    new_buys = [rcept_no for rcept_no in buy_rcepts
+                if rcept_no not in seen and rcept_no in all_d002]
 
-        if not is_jangnaemaesu(rcept_no):
-            continue
+    print(f"D002 전체={len(all_d002)} 장내매수={len(buy_rcepts)} 신규알림={len(new_buys)}")
 
+    for rcept_no in new_buys:
+        item = all_d002[rcept_no]
         corp = item.get("corp_name", "")
         filer = item.get("flr_nm", "")
         link = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}"
-
         msg = (
             f"🟢 <b>임원·주요주주 장내매수</b>\n"
             f"종목: <b>{corp}</b>\n"
