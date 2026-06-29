@@ -100,9 +100,9 @@ def send_telegram(msg):
 
 
 def main():
-    # 텔레그램 연결 테스트
-    print("[TG TEST] 연결 테스트 중...")
-    send_telegram("✅ DART 알림봇 연결 테스트")
+    # 삼성중공업 공시 고정 디버그
+    print("[FIXED DEBUG] 삼성중공업 20260629000133 직접 검사")
+    is_jangnaemaesu("20260629000133")
 
     today = date.today().strftime("%Y%m%d")
     items = fetch_disclosures(today)
