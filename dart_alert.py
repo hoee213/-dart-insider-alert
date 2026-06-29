@@ -75,6 +75,9 @@ def get_dcm_no(rcept_no):
     import re
     url = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}"
     resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+    if rcept_no == DEBUG_RCEPT:
+        print(f"[HTML] 전체길이={len(resp.text)}")
+        print(f"[HTML] 1000~3000: {resp.text[1000:3000]}")
     m = re.search(r"dcmNo['\"\s:=]+(\d+)", resp.text)
     return m.group(1) if m else None
 
