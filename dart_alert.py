@@ -44,33 +44,46 @@ def fetch_disclosures(today):
     return filtered
 
 
-def read_zip_text(content_bytes):
+def read_zip_text(content_bytes, debug=False):
     texts = []
     try:
         zf = zipfile.ZipFile(io.BytesIO(content_bytes))
+        if debug:
+            print(f"[ZIP] 파일목록: {zf.namelist()}")
         for fname in zf.namelist():
             raw = zf.read(fname)
             for enc in ("utf-8", "euc-kr", "cp949"):
                 try:
-                    texts.append(raw.decode(enc))
+                    text = raw.decode(enc)
+                    if debug:
+                        print(f"[ZIP] {fname} ({enc}) 앞200자: {text[:200]}")
+                    texts.append(text)
                     break
                 except Exception:
                     continue
-    except Exception:
-        pass
+    except Exception as e:
+        if debug:
+            print(f"[ZIP] zip 오류: {e}")
     return "\n".join(texts)
 
 
+DEBUG_RCEPT = "20260629000133"  # 삼성중공업
+
+
 def is_jangnaemaesu(rcept_no):
+    debug = (rcept_no == DEBUG_RCEPT)
     try:
         resp = requests.get(
             "https://opendart.fss.or.kr/api/document.json",
             params={"crtfc_key": DART_KEY, "rcept_no": rcept_no},
             timeout=20,
         )
-        text = read_zip_text(resp.content)
+        if debug:
+            print(f"[DOC] HTTP={resp.status_code} size={len(resp.content)} type={resp.headers.get('content-type','')}")
+        text = read_zip_text(resp.content, debug=debug)
         found = "장내매수" in text
-        print(f"[DOC] {rcept_no} 장내매수={found}")
+        if debug or found:
+            print(f"[DOC] {rcept_no} 장내매수={found}")
         return found
     except Exception as e:
         print(f"[DOC] {rcept_no} 오류: {e}")
