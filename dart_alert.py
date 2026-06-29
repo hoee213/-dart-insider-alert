@@ -70,27 +70,35 @@ def read_zip_text(content_bytes, debug=False):
 DEBUG_RCEPT = "20260629000133"  # 삼성중공업
 
 
+def get_dcm_no(rcept_no):
+    """DART 뷰어 페이지에서 dcmNo 추출"""
+    import re
+    url = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}"
+    resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+    m = re.search(r"dcmNo['\"\s:=]+(\d+)", resp.text)
+    return m.group(1) if m else None
+
+
 def is_jangnaemaesu(rcept_no):
     debug = (rcept_no == DEBUG_RCEPT)
     try:
-        # DART 공시 뷰어 HTML에서 장내매수 텍스트 확인
-        url = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}"
+        dcm_no = get_dcm_no(rcept_no)
+        if debug:
+            print(f"[DOC] dcmNo={dcm_no}")
+        if not dcm_no:
+            return False
+
+        url = (f"https://dart.fss.or.kr/report/viewer.do"
+               f"?rcpNo={rcept_no}&dcmNo={dcm_no}&eleId=0&offset=0&length=0&dtd=")
         resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
         if debug:
-            print(f"[DOC] HTTP={resp.status_code} size={len(resp.content)}")
+            print(f"[DOC] viewer HTTP={resp.status_code} size={len(resp.content)}")
             print(f"[DOC] 앞500자: {resp.text[:500]}")
-        for enc in ("utf-8", "euc-kr", "cp949"):
-            try:
-                text = resp.content.decode(enc)
-                found = "장내매수" in text
-                if debug or found:
-                    print(f"[DOC] {rcept_no} ({enc}) 장내매수={found}")
-                if found:
-                    return True
-                break
-            except Exception:
-                continue
-        return False
+
+        found = "장내매수" in resp.text
+        if debug or found:
+            print(f"[DOC] {rcept_no} 장내매수={found}")
+        return found
     except Exception as e:
         print(f"[DOC] {rcept_no} 오류: {e}")
         return False
