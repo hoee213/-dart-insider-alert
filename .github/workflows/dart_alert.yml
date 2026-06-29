@@ -1,0 +1,41 @@
+name: DART 임원·주요주주 장내매수 알림
+
+on:
+  schedule:
+    # 매 5분, 09:00~15:55 KST (00:00~06:55 UTC), 월~금
+    - cron: '*/5 0-6 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 오늘 날짜
+        id: date
+        run: echo "date=$(date +%Y%m%d)" >> $GITHUB_OUTPUT
+
+      # run_number를 키에 포함해 매 실행마다 seen.json 저장
+      - name: seen.json 캐시 복원
+        uses: actions/cache@v4
+        with:
+          path: seen.json
+          key: dart-seen-${{ steps.date.outputs.date }}-${{ github.run_number }}
+          restore-keys: |
+            dart-seen-${{ steps.date.outputs.date }}-
+            dart-seen-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests
+
+      - name: 공시 확인 및 텔레그램 발송
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python dart_alert.py
