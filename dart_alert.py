@@ -31,32 +31,44 @@ def fetch_disclosures(today):
             "crtfc_key": DART_KEY,
             "bgn_de": today,
             "end_de": today,
-            "pblntf_detail_ty": "D002",  # 임원·주요주주특정증권등소유상황보고서
+            "pblntf_ty": "D",        # 지분공시 전체
             "page_count": 100,
         },
         timeout=10,
     )
     data = resp.json()
-    if data.get("status") == "000":
-        return data.get("list", [])
-    return []
+    items = data.get("list", []) if data.get("status") == "000" else []
+    # 임원·주요주주 소유상황 보고서만
+    return [i for i in items if "소유상황" in i.get("report_nm", "")]
+
+
+def read_zip_text(content_bytes):
+    """zip에서 텍스트 추출, EUC-KR / UTF-8 모두 시도"""
+    texts = []
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(content_bytes))
+        for fname in zf.namelist():
+            raw = zf.read(fname)
+            for enc in ("utf-8", "euc-kr", "cp949"):
+                try:
+                    texts.append(raw.decode(enc))
+                    break
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return "\n".join(texts)
 
 
 def is_jangnaemaesu(rcept_no):
-    """공시 원문 XML에서 '장내매수' 텍스트 확인"""
     try:
         resp = requests.get(
             "https://opendart.fss.or.kr/api/document.json",
             params={"crtfc_key": DART_KEY, "rcept_no": rcept_no},
             timeout=20,
         )
-        zf = zipfile.ZipFile(io.BytesIO(resp.content))
-        for fname in zf.namelist():
-            if fname.lower().endswith(".xml"):
-                content = zf.read(fname).decode("utf-8", errors="ignore")
-                if "장내매수" in content:
-                    return True
-        return False
+        text = read_zip_text(resp.content)
+        return "장내매수" in text
     except Exception:
         return False
 
@@ -78,7 +90,7 @@ def main():
 
     for item in new_items:
         rcept_no = item["rcept_no"]
-        seen.add(rcept_no)  # 매수/매도 무관하게 중복 방지
+        seen.add(rcept_no)
 
         if not is_jangnaemaesu(rcept_no):
             continue
