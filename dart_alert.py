@@ -78,11 +78,11 @@ def main():
     buy_rcepts = fetch_jangnaemaesu_rcepts(today)
 
     seen = load_seen()
-    # 오늘 D002 전체를 seen에 기록 (매도 포함 중복 방지)
-    seen.update(all_d002.keys())
-
     new_buys = [rcept_no for rcept_no in buy_rcepts
                 if rcept_no not in seen and rcept_no in all_d002]
+
+    # 오늘 D002 전체를 seen에 기록 (매도 포함 중복 방지)
+    seen.update(all_d002.keys())
 
     print(f"D002 전체={len(all_d002)} 장내매수={len(buy_rcepts)} 신규알림={len(new_buys)}")
 
