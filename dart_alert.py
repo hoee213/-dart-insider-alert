@@ -31,19 +31,20 @@ def fetch_disclosures(today):
             "crtfc_key": DART_KEY,
             "bgn_de": today,
             "end_de": today,
-            "pblntf_ty": "D",        # 지분공시 전체
+            "pblntf_ty": "D",
             "page_count": 100,
         },
         timeout=10,
     )
     data = resp.json()
+    print(f"[DART API] status={data.get('status')}, total={data.get('total_count', 0)}")
     items = data.get("list", []) if data.get("status") == "000" else []
-    # 임원·주요주주 소유상황 보고서만
-    return [i for i in items if "소유상황" in i.get("report_nm", "")]
+    filtered = [i for i in items if "소유상황" in i.get("report_nm", "")]
+    print(f"[DART] 소유상황 공시 {len(filtered)}건: {[i.get('corp_name') for i in filtered]}")
+    return filtered
 
 
 def read_zip_text(content_bytes):
-    """zip에서 텍스트 추출, EUC-KR / UTF-8 모두 시도"""
     texts = []
     try:
         zf = zipfile.ZipFile(io.BytesIO(content_bytes))
@@ -68,25 +69,34 @@ def is_jangnaemaesu(rcept_no):
             timeout=20,
         )
         text = read_zip_text(resp.content)
-        return "장내매수" in text
-    except Exception:
+        found = "장내매수" in text
+        print(f"[DOC] {rcept_no} 장내매수={found}")
+        return found
+    except Exception as e:
+        print(f"[DOC] {rcept_no} 오류: {e}")
         return False
 
 
 def send_telegram(msg):
-    requests.post(
+    resp = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"},
         timeout=10,
     )
+    print(f"[TG] status={resp.status_code} body={resp.text[:200]}")
 
 
 def main():
+    # 텔레그램 연결 테스트
+    print("[TG TEST] 연결 테스트 중...")
+    send_telegram("✅ DART 알림봇 연결 테스트")
+
     today = date.today().strftime("%Y%m%d")
     items = fetch_disclosures(today)
 
     seen = load_seen()
     new_items = [i for i in items if i["rcept_no"] not in seen]
+    print(f"[SEEN] 신규 공시 {len(new_items)}건")
 
     for item in new_items:
         rcept_no = item["rcept_no"]
