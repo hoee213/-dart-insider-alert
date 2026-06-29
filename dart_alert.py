@@ -73,18 +73,24 @@ DEBUG_RCEPT = "20260629000133"  # 삼성중공업
 def is_jangnaemaesu(rcept_no):
     debug = (rcept_no == DEBUG_RCEPT)
     try:
-        resp = requests.get(
-            "https://opendart.fss.or.kr/api/document.json",
-            params={"crtfc_key": DART_KEY, "rcept_no": rcept_no},
-            timeout=20,
-        )
+        # DART 공시 뷰어 HTML에서 장내매수 텍스트 확인
+        url = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}"
+        resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
         if debug:
-            print(f"[DOC] HTTP={resp.status_code} size={len(resp.content)} type={resp.headers.get('content-type','')}")
-        text = read_zip_text(resp.content, debug=debug)
-        found = "장내매수" in text
-        if debug or found:
-            print(f"[DOC] {rcept_no} 장내매수={found}")
-        return found
+            print(f"[DOC] HTTP={resp.status_code} size={len(resp.content)}")
+            print(f"[DOC] 앞500자: {resp.text[:500]}")
+        for enc in ("utf-8", "euc-kr", "cp949"):
+            try:
+                text = resp.content.decode(enc)
+                found = "장내매수" in text
+                if debug or found:
+                    print(f"[DOC] {rcept_no} ({enc}) 장내매수={found}")
+                if found:
+                    return True
+                break
+            except Exception:
+                continue
+        return False
     except Exception as e:
         print(f"[DOC] {rcept_no} 오류: {e}")
         return False
